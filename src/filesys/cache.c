@@ -8,7 +8,7 @@
 #include "devices/block.h"
 #include "devices/ide.h"
 /* Debug macro taken from xappsoftware blog */
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
    #define LOG printf 
 #else
@@ -27,7 +27,7 @@ struct cache_entry
 struct hash buffer_cache;
 int entries_in_cache = 0;
 
-void buffer_cache_init (void)
+void buffer_cache_init (void)  /* Called in inode.c */
 {
    /* Hash Table Initialization */
    hash_init (&buffer_cache, block_hash, block_less, NULL);
@@ -36,6 +36,7 @@ void buffer_cache_init (void)
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
+   LOG("<1> block: %x sector %x buffer %x\n", (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_read (block, sector, buffer);
 }
 
@@ -67,7 +68,7 @@ int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum
 	memcpy (buf -> data, buffer, BLOCK_SECTOR_SIZE);
   	hash_insert (&buffer_cache, &buf->hash_elem);
 	entries_in_cache++;
-	LOG("entries : %d\n", entries_in_cache);
+	LOG("entries : %d access: %d\n", entries_in_cache, access);
 	return SUCCESS;
      }
    return FAILURE;
@@ -100,8 +101,7 @@ int cache_write (struct block *block, block_sector_t sector, const void *buffer)
 	memcpy (found->data, buffer, BLOCK_SECTOR_SIZE);
 	/* TODO: Synch call to hash access so only one person can modify hash_elem */
 	struct hash_elem *old = hash_replace (&buffer_cache, &found->hash_elem);
-	/* TODO : Is the free necessary? */
-	free (old);
+	LOG ("cache_write \n");
 	return SUCCESS;
      }
    else 
