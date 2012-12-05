@@ -7,6 +7,13 @@
 #include "threads/malloc.h"
 #include "devices/block.h"
 #include "devices/ide.h"
+/* Debug macro taken from xappsoftware blog */
+#define DEBUG 1
+#if DEBUG
+   #define LOG printf 
+#else
+   #define LOG(format, args...) ((void)0)
+#endif
 
 struct cache_entry
 {
@@ -38,7 +45,7 @@ int block_cache_write (struct block *block, block_sector_t sector, const void *b
    return cache_write (block, sector, buffer);
 }
 
-int cache_insert (struct block *block, block_sector_t sector, const void *buffer, enum access_t access)
+int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum access_t access)
 {
    if (cache_is_full())
      {
@@ -60,6 +67,7 @@ int cache_insert (struct block *block, block_sector_t sector, const void *buffer
 	memcpy (buf -> data, buffer, BLOCK_SECTOR_SIZE);
   	hash_insert (&buffer_cache, &buf->hash_elem);
 	entries_in_cache++;
+	LOG("entries : %d\n", entries_in_cache);
 	return SUCCESS;
      }
    return FAILURE;
@@ -83,15 +91,16 @@ int cache_read (struct block *block, block_sector_t sector, void *buffer)
 /* If entry found in cache, writes buffer into it, and returns success.
    Else, if cache not full, fills cache with entry and returns success.
    Fails only if entry not found and cache is full */
-int cache_write (struct block *block, block_sector_t sector, void *buffer)
+int cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
    struct cache_entry *found = cache_lookup (sector);
    if (found)
      {
 	found->dirty = true;
-	memcpy (found->sector, sector, BLOCK_SECTOR_SIZE);
+	memcpy (found->data, buffer, BLOCK_SECTOR_SIZE);
 	/* TODO: Synch call to hash access so only one person can modify hash_elem */
-	struct cache_entry *old = hash_replace (&buffer_cache, &found->hash_elem);
+	struct hash_elem *old = hash_replace (&buffer_cache, &found->hash_elem);
+	/* TODO : Is the free necessary? */
 	free (old);
 	return SUCCESS;
      }
@@ -131,13 +140,12 @@ bool block_less (const struct hash_elem *a_, const struct hash_elem *b_,
   return a->sector < b->sector;
 }
 
-struct cache_entry * cache_lookup (void *address)
+struct cache_entry * cache_lookup (block_sector_t sector)
 {
   struct cache_entry p;
   struct hash_elem *e;
-  p.sector = address;
+  p.sector = sector;
   e = hash_find (&buffer_cache, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct cache_entry, hash_elem) : NULL;
 }
-
 
