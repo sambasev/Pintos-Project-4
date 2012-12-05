@@ -1,65 +1,110 @@
 /* cache.c */
+
+#include "filesys/cache.h"
+#include <hash.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include "threads/malloc.h"
+#include "devices/block.h"
+#include "devices/ide.h"
+
 struct cache_entry
 {
-   void * block;               /* Pointer to a block */
+   struct hash_elem hash_elem; /* Each cache_entry is an element in the buffer_cache hash table */
+   block_sector_t sector;      /* The key is block_sector_t and the data returned is data */
+   char name[16]; 	       /* Block device name. You can call block_get_by_name on this */
+   void * data;                /* Actual data read from the block */
    bool dirty;                 /* Indicates if this entry was modified */
    bool read_only;             /* R/W */
-   struct hash_elem hash_elem; /* Each cache_entry is an element in the buffer_cache hash table */
-}
+};
+struct hash buffer_cache;
+int entries_in_cache = 0;
 
 void buffer_cache_init (void)
 {
+   /* Hash Table Initialization */
+   hash_init (&buffer_cache, block_hash, block_less, NULL);
 }
+
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
-   if (!cache_read (buffer, sector))
-     {
-        evict_cache_line ();   /* Cache is full, evict cache line  */
-        cache_insert (sector, READ);
-        set_accessed (sector);
-     }
+   return cache_read (block, sector, buffer);
 }
 
 /* Best effort cache_write */
-void block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
+int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
-   if (!cache_write (buffer, sector))
-     {
-        evict_cache_line ();   /* Cache is full, evict cache line  */
-        cache_insert (sector, WRITE);
-        set_dirty (sector);
-     }
+   return cache_write (block, sector, buffer);
 }
 
-void cache_insert (block_sector_t sector)
+int cache_insert (struct block *block, block_sector_t sector, const void *buffer, enum access_t access)
 {
-   if (cache_is_full(void))
+   if (cache_is_full())
      {
-        evict_cache_line(void);
+        evict_cache_line(); /* Cache is full, evict cache line and retry */
      }
-   else
+   else 
      {
-        /* Insert Cache entry */
+	/* TODO: Check malloc success */
+	struct cache_entry *buf = malloc (sizeof(struct cache_entry));	
+	buf -> sector = sector;
+	if (access == WRITE) 
+	  {
+	    buf -> data = malloc(BLOCK_SECTOR_SIZE);	/* Write to cache. Don't touch disk */
+	  }
+	else
+	  {
+	    block_read (block_get_role (BLOCK_FILESYS), sector, buffer); /* Read from disk and then populate cache */
+	  }
+	memcpy (buf -> data, buffer, BLOCK_SECTOR_SIZE);
+  	hash_insert (&buffer_cache, &buf->hash_elem);
+	entries_in_cache++;
+	return SUCCESS;
      }
+   return FAILURE;
 }
 
 /* If entry found in cache, reads into buffer and returns success.
-   Else, if cache is not full, fills cache with entry and returns success
-   Fails only if entry not found and cache is full */
-void cache_read ()
+   Else fills cache with entry. Returns failure if cache insert failed */
+int cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
+   struct cache_entry *found = cache_lookup (sector);
+   if (found)
+     {
+	memcpy (buffer, found->data, BLOCK_SECTOR_SIZE);
+	return SUCCESS;
+     }
+   else
+     {
+	return (cache_insert (block, sector, buffer, READ));
+     }
 }
 /* If entry found in cache, writes buffer into it, and returns success.
    Else, if cache not full, fills cache with entry and returns success.
    Fails only if entry not found and cache is full */
-void cache_write ()
+int cache_write (struct block *block, block_sector_t sector, void *buffer)
 {
+   struct cache_entry *found = cache_lookup (sector);
+   if (found)
+     {
+	found->dirty = true;
+	memcpy (found->sector, sector, BLOCK_SECTOR_SIZE);
+	/* TODO: Synch call to hash access so only one person can modify hash_elem */
+	struct cache_entry *old = hash_replace (&buffer_cache, &found->hash_elem);
+	free (old);
+	return SUCCESS;
+     }
+   else 
+     {
+	return cache_insert (block, sector, buffer, WRITE);	
+     }
 }
 
 bool cache_is_full(void)
 {
-   return (entries_in_cache == CACHE_SIZE);
+   //return (entries_in_cache == CACHE_SIZE);
+   return false;
 }
 
 void evict_cache_line(void)
@@ -74,7 +119,7 @@ void evict_cache_line(void)
 unsigned block_hash (const struct hash_elem *p_, void *aux UNUSED)
 {
   const struct cache_entry *p = hash_entry (p_, struct cache_entry, hash_elem);
-  return hash_bytes (&p->block, sizeof p->block);
+  return hash_bytes (&p->sector, sizeof p->sector);
 }
 
 bool block_less (const struct hash_elem *a_, const struct hash_elem *b_,
@@ -83,22 +128,16 @@ bool block_less (const struct hash_elem *a_, const struct hash_elem *b_,
   const struct cache_entry *a = hash_entry (a_, struct cache_entry, hash_elem);
   const struct cache_entry *b = hash_entry (b_, struct cache_entry, hash_elem);
 
-  return a->block < b->block;
+  return a->sector < b->sector;
 }
 
-struct cache_entry * block_lookup (void *address)
+struct cache_entry * cache_lookup (void *address)
 {
-  struct thread *t = thread_current();
   struct cache_entry p;
   struct hash_elem *e;
-  p.block = address;
-  e = hash_find (&t->buffer_cache, &p.hash_elem);
+  p.sector = address;
+  e = hash_find (&buffer_cache, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct cache_entry, hash_elem) : NULL;
 }
 
-void insert_cache (struct cache_entry * entry)
-{
-  struct thread *t = thread_current();
-  hash_insert (&t->buffer_cache, &cache_entry->hash_elem);
-}
 
