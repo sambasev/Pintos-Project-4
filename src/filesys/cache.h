@@ -26,6 +26,9 @@ int cache_write (struct block *block, block_sector_t sector, const void *buffer)
 bool cache_is_full(void);
 void evict_cache_line(void);
 
+void flush_cache (void);
+void cache_evict (struct list_elem *e);
+
 unsigned block_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool block_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
 struct cache_entry * cache_lookup (block_sector_t sector);
