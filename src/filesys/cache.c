@@ -9,7 +9,7 @@
 #include "devices/block.h"
 #include "devices/ide.h"
 /* Debug macro taken from xappsoftware blog */
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
    #define LOG printf 
 #else
@@ -46,35 +46,41 @@ void buffer_cache_init (void)  /* Called in inode.c */
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
-   LOG("<1> READ block: %x sector %x buffer %x\n", (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+   LOG("<1> READ block: %x sector %x buffer %x\n", 
+      (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_read (block, sector, buffer);
 }
 
 /* Best effort cache_write */
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
-   LOG("<2> WRITE block: %x sector %x buffer %x\n", (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+   LOG("<2> WRITE block: %x sector %x buffer %x\n", 
+      (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_write (block, sector, buffer);
 }
 
 int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum access_t access)
 {
    /* TODO: Check malloc success */
-   LOG("<2.1> INSERT block: %x sector %x access %d\n", (uint32_t)block, sector, access);
+   LOG("<2.1> INSERT block: %x sector %x access %d\n", 
+      (uint32_t)block, sector, access);
    struct cache_entry *buf = malloc (sizeof(struct cache_entry));	
+   buf->data = malloc(BLOCK_SECTOR_SIZE);	
    buf->sector = sector;
    if (access == WRITE) 
      {
-       buf->data = malloc(BLOCK_SECTOR_SIZE);	/* Write to cache. Don't touch disk */
-       buf->dirty = true;			/* So that on eviction, this sector be written */
+       buf->dirty = true;			/* On eviction, this sector be written to disk */
+       memcpy (buf->data, buffer, BLOCK_SECTOR_SIZE);
      }
    else
      {
-       block_read (block_get_role (BLOCK_FILESYS), sector, buffer); /* Read from disk and populate cache */
-       LOG("<2.2> INSERT block: %x sector %x access %d\n", (uint32_t)block, sector, access);
+       block_read (block_get_role (BLOCK_FILESYS), sector, buf->data); /* Read from disk and populate cache */
+       memcpy (buffer, buf->data, BLOCK_SECTOR_SIZE);
+       LOG("<2.2> INSERT block: %x sector %x access %d\n", 
+	  (uint32_t)block, sector, access);
      }
-   memcpy (buf->data, buffer, BLOCK_SECTOR_SIZE);
-       LOG("<2.3> INSERT block: %x sector %x access %d\n", (uint32_t)block, sector, access);
+       LOG("<2.3> INSERT block: %x sector %x access %d\n", 
+	  (uint32_t)block, sector, access);
    struct list_elem *full = update_lru (buf, true);
    if (full)
      {
@@ -92,7 +98,8 @@ int cache_read (struct block *block, block_sector_t sector, void *buffer)
    struct cache_entry *found = cache_lookup (sector);
    if (found)
      {
-        LOG("<1.5> READ found block: %x sector %x buffer %x\n", (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+        LOG("<1.5> READ found block: %x sector %x buffer %x\n", 
+	   (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
 	found->accessed = true;
 	memcpy (buffer, found->data, BLOCK_SECTOR_SIZE);
 	update_lru (found, false);    /* Update corresponding item in lru list */
@@ -100,7 +107,8 @@ int cache_read (struct block *block, block_sector_t sector, void *buffer)
      }
    else
      {
-        LOG("<1.6> READ NOT found block: %x sector %x buffer %x\n", (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+        LOG("<1.6> READ NOT found block: %x sector %x buffer %x\n", 
+	   (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
 	return (cache_insert (block, sector, buffer, READ));
      }
 }
@@ -134,15 +142,20 @@ void cache_evict (struct list_elem *e)
      {
         struct cache_entry *lru_entry = list_entry (e, struct cache_entry, list_elem);
      	/* Write to disk only if dirty */
-        if (lru_entry->dirty)
+        if (lru_entry->dirty == true)
           {
      	    block_write (block_get_role (BLOCK_FILESYS), lru_entry->sector, lru_entry->data); 
-           LOG("<3> Evicted sector :%x \n", (uint32_t)lru_entry->sector);
+	    free (lru_entry->data);
+	    lru_entry->data = NULL;
+            LOG("<3> Evicted sector :%x \n", (uint32_t)lru_entry->sector);
    	  }
         /* Delete line from buffer_cache */ 	
         hash_delete (&buffer_cache, &lru_entry->hash_elem);
-        LOG("<3.1> Hash Entry Deleted %x entries_in_cache : %d\n", (uint32_t)lru_entry->sector, entries_in_cache);
-        free (lru_entry);
+        LOG("<3.1> Hash Entry Deleted %x entries_in_cache : %d\n", 
+	   (uint32_t)lru_entry->sector, entries_in_cache);
+        free (lru_entry);	/* Free resources */
+	lru_entry = NULL;
+
         entries_in_cache--;
      }
 }
