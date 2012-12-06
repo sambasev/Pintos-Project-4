@@ -34,6 +34,8 @@ static struct bitmap *free_map;
 struct list_elem * update_lru (struct cache_entry *e, bool insert);
 
 int entries_in_cache = 0;
+int disk_access = 0;	       /* Used for measuring performance improvement due to cache */	
+int total_access = 0;
 
 void buffer_cache_init (void)  /* Called in inode.c */
 {
@@ -46,6 +48,7 @@ void buffer_cache_init (void)  /* Called in inode.c */
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
+   total_access++;
    LOG("<1> READ block: %x sector %x buffer %x\n", 
       (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_read (block, sector, buffer);
@@ -54,6 +57,7 @@ int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 /* Best effort cache_write */
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
+   total_access++;
    LOG("<2> WRITE block: %x sector %x buffer %x\n", 
       (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_write (block, sector, buffer);
@@ -75,6 +79,7 @@ int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum
    else
      {
        block_read (block_get_role (BLOCK_FILESYS), sector, buf->data); /* Read from disk and populate cache */
+       disk_access++;
        memcpy (buffer, buf->data, BLOCK_SECTOR_SIZE);
        LOG("<2.2> INSERT block: %x sector %x access %d\n", 
 	  (uint32_t)block, sector, access);
@@ -145,6 +150,7 @@ void cache_evict (struct list_elem *e)
         if (lru_entry->dirty == true)
           {
      	    block_write (block_get_role (BLOCK_FILESYS), lru_entry->sector, lru_entry->data); 
+	    disk_access++;
 	    free (lru_entry->data);
 	    lru_entry->data = NULL;
             LOG("<3> Evicted sector :%x \n", (uint32_t)lru_entry->sector);
@@ -162,6 +168,7 @@ void cache_evict (struct list_elem *e)
 
 bool cache_is_full (void)
 {
+   LOG ("disk_accesses TOTAL (R+W) : %d total_accesses %d \n", disk_access, total_access);
    return (entries_in_cache >= CACHE_SIZE);
 }
 
