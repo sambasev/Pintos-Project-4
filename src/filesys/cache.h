@@ -19,7 +19,11 @@ enum access_t
 };
 void buffer_cache_init (void);
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer);
+int block_cache_read_partial (struct block *block, block_sector_t sector,
+          void *buffer, int ofs, int chunk_size);
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer);
+int block_cache_write_partial (struct block * block, block_sector_t sector,
+          void *buffer, int ofs, int chunk_size);
 int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum access_t);
 int cache_read (struct block *block, block_sector_t sector, void *buffer);
 int cache_write (struct block *block, block_sector_t sector, const void *buffer);

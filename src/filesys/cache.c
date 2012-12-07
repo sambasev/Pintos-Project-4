@@ -54,6 +54,16 @@ int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
    return cache_read (block, sector, buffer);
 }
 
+int block_cache_read_partial (struct block *block, block_sector_t sector, 
+          void *buffer, int ofs, int chunk_size)
+{
+   uint8_t *bounce = malloc (BLOCK_SECTOR_SIZE);
+   int rc = block_cache_read (block, sector, bounce);	/* Read a block into bounce */
+   memcpy (buffer, bounce + ofs, chunk_size);
+   free (bounce); 	
+   bounce = NULL;
+   return rc;
+}
 /* Best effort cache_write */
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
@@ -61,6 +71,26 @@ int block_cache_write (struct block *block, block_sector_t sector, const void *b
    LOG("<2> WRITE block: %x sector %x buffer %x\n", 
       (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_write (block, sector, buffer);
+}
+
+int block_cache_write_partial (struct block * block, block_sector_t sector, 
+	  void *buffer, int ofs, int chunk_size)
+{
+   uint8_t *bounce = malloc (BLOCK_SECTOR_SIZE);
+   int rc = SUCCESS;
+   if (ofs > 0 || chunk_size < (BLOCK_SECTOR_SIZE - ofs))
+     {
+	rc = block_cache_read (block, sector, bounce);
+     }       
+   else
+     {
+	memset (bounce, 0, BLOCK_SECTOR_SIZE);
+     }  
+   memcpy (bounce + ofs, buffer, chunk_size);
+   block_cache_write (block, sector, bounce);
+   free (bounce);
+   bounce = NULL;
+   return rc;
 }
 
 int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum access_t access)
