@@ -17,10 +17,30 @@ struct inode_disk
   {
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
+    block_sector_t inode_indirect;	/* block # of inode_indirect struct */
+    block_sector_t inode_dblindirect;   /* block # of inode_dblindirect struct */ 
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    uint32_t unused[123];               /* Not used. */
   };
 
+/* On-disk indirect block */
+struct inode_indirect
+  {
+    block_sector_t sector;		/* sector containing this data structure */
+    struct inode * parent;
+    off_t length;
+    block_sector_t [125];		/* Each block holds data */
+  };
+
+/* On-disk double indirect block */
+struct inode_dbindirect
+  {
+    block_sector_t sector;
+    struct inode * parent;
+    off_t length;
+    block_sector_t [125];		/* Each block holds the start block # of
+					   an indirect block */
+  };
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
 static inline size_t
@@ -28,6 +48,10 @@ bytes_to_sectors (off_t size)
 {
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
+
+/* Each inode can address 128 + (128*128)* blocks which contain 
+   a total of 8.0625 MB. The direct blocks will be used for small 
+   files (for quick access)*/
 
 /* In-memory inode. */
 struct inode 
@@ -38,6 +62,12 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
+
+    off_t length;
+    struct inode indirect;              /* Each indirect block holds 128 block #s */
+    block_sector_t indirect;		/* Block in which the indirect struct resides */
+    struct inode dbindirect;		/* One dbly indirect block can address 16384 blocks */
+    block_sector_t dblindirect; 	/* Block in which the dblindirect struct resides */
   };
 
 /* Returns the block device sector that contains byte offset POS
