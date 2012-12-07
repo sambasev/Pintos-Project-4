@@ -103,7 +103,7 @@ int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum
    buf->sector = sector;
    if (access == WRITE) 
      {
-       buf->dirty = true;			/* On eviction, this sector be written to disk */
+       buf->dirty = true;			/* write-behind cache: write to disk on evict */
        memcpy (buf->data, buffer, BLOCK_SECTOR_SIZE);
      }
    else
@@ -206,7 +206,10 @@ bool cache_is_full (void)
 /* Called periodically (every 30 seconds) by timer interrupt event */
 void flush_cache (void)
 {
-   
+   while (!list_empty(&lru))
+      {
+	cache_evict (list_pop_front(&lru));
+      } 
 }
 
 /* TODO: Acquire lock before modifying list or hash */
