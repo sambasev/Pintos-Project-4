@@ -8,6 +8,8 @@
 #include "threads/malloc.h"
 #include "devices/block.h"
 #include "devices/ide.h"
+#include "devices/timer.h"
+
 /* Debug macro taken from xappsoftware blog */
 #define DEBUG 0
 #if DEBUG
@@ -16,6 +18,7 @@
    #define LOG(format, args...) ((void)0)
 #endif
 #define CACHE_SIZE 64
+#define THIRTY_SECONDS TIMER_FREQ * 30
 
 struct cache_entry
 {
@@ -36,6 +39,7 @@ struct list_elem * update_lru (struct cache_entry *e, bool insert);
 int entries_in_cache = 0;
 int disk_access = 0;	       /* Used for measuring performance improvement due to cache */	
 int total_access = 0;
+int64_t time = 0;
 
 void buffer_cache_init (void)  /* Called in inode.c */
 {
@@ -43,12 +47,14 @@ void buffer_cache_init (void)  /* Called in inode.c */
    hash_init (&buffer_cache, block_hash, block_less, NULL);
    list_init (&lru);
    free_map = bitmap_create (CACHE_SIZE); /* TODO: Use this instead of entries_in_cache */
+   time = timer_ticks ();		  /* Get current time */
 }
 
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
    total_access++;
+   timer_update();					/* Any cache access updates timer */
    LOG("<1> READ block: %x sector %x buffer %x\n", 
       (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_read (block, sector, buffer);
@@ -68,6 +74,7 @@ int block_cache_read_partial (struct block *block, block_sector_t sector,
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
    total_access++;
+   timer_update();					/* Any cache access updates timer */
    LOG("<2> WRITE block: %x sector %x buffer %x\n", 
       (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
    return cache_write (block, sector, buffer);
@@ -204,7 +211,7 @@ bool cache_is_full (void)
 
 
 /* Called periodically (every 30 seconds) by timer interrupt event */
-void flush_cache (void)
+void cache_flush (void)
 {
    while (!list_empty(&lru))
       {
@@ -212,6 +219,15 @@ void flush_cache (void)
       } 
 }
 
+/* Every 30 seconds or so, flush the cache */
+void timer_update (void)
+{
+   if (timer_elapsed (time) >= THIRTY_SECONDS)
+     {
+	time = timer_ticks();		/* Reset time */
+	cache_flush ();
+     }
+}
 /* TODO: Acquire lock before modifying list or hash */
 /* If insert is true, puts element at top of list, and returns element to evict, if any.
    If insert is false, removes item from current position and puts it at the front. 
