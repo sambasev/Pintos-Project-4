@@ -20,4 +20,13 @@ void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 
+void free_resources (void * p1, void * p2, void * p3);
+bool sector_allocation (size_t sectors, size_t *direct_p,
+ 	size_t *indirect_p, size_t *dbl_p, size_t *remain_p);
+size_t alloc_direct_sectors (block_sector_t *ptr, int index, size_t sectors);
+size_t alloc_indirect_sectors (block_sector_t *ptr, int index, size_t sectors);
+size_t alloc_double_indirect_sectors (block_sector_t *ptr, int index,
+					 size_t sectors, size_t remaining);
+
+
 #endif /* filesys/inode.h */
