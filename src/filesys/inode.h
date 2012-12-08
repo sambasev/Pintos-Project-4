@@ -28,5 +28,8 @@ size_t alloc_indirect_sectors (block_sector_t *ptr, int index, size_t sectors);
 size_t alloc_double_indirect_sectors (block_sector_t *ptr, int index,
 					 size_t sectors, size_t remaining);
 
-
+bool eof_reached (struct inode *node, off_t offset);
+int no_bytes (void);
+block_sector_t get_inode_block (struct inode *node, off_t offset);
+void extend_file (struct inode *node, off_t offset);
 #endif /* filesys/inode.h */
