@@ -116,6 +116,9 @@ struct thread
 
     // Needed for denying writes to executables
     struct file* executable;
+    
+    //Needed for directory support
+    struct dir* cur_dir;
   };
 
 /* If false (default), use round-robin scheduler.
@@ -156,5 +159,5 @@ int thread_get_load_avg (void);
 
 bool thread_alive (int pid);
 void release_locks (void);
-
+struct thread * get_thread (int pid);
 #endif /* threads/thread.h */

@@ -33,7 +33,6 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -74,6 +73,14 @@ start_process (void *file_name_)
   if (success)
     {
       thread_current()->cp->load = LOAD_SUCCESS;
+      struct thread *cur = thread_current();
+      // Inherit parent's current directory
+      if (thread_alive(cur->parent))
+        {
+          struct thread *parent = get_thread(cur->parent);
+          // inherit parent's current directory
+          cur->cur_dir = parent->cur_dir;
+        }
     }
   else
     {

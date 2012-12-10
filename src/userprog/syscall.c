@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "filesys/directory.h"
 
 #define MAX_ARGS 3
 #define USER_VADDR_BOTTOM ((void *) 0x08048000)
@@ -183,6 +184,7 @@ bool create (const char *file, unsigned initial_size)
 bool remove (const char *file)
 {
   lock_acquire(&filesys_lock);
+  //char *cur_file = resolve_file (file);
   bool success = filesys_remove(file);
   lock_release(&filesys_lock);
   return success;
@@ -191,7 +193,16 @@ bool remove (const char *file)
 int open (const char *file)
 {
   lock_acquire(&filesys_lock);
-  struct file *f = filesys_open(file);
+  /*
+  struct thread * t = thread_current();
+  if (t->cur_dir == NULL)
+    {
+      t->cur_dir = dir_open_root();
+    }
+  char *cur_file = resolve_file (file);
+  struct file *f = filesys_open_in_dir(cur_file, t->cur_dir);
+  */
+  struct file *f = filesys_open (file);
   if (!f)
     {
       lock_release(&filesys_lock);
@@ -292,7 +303,12 @@ void close (int fd)
   process_close_file(fd);
   lock_release(&filesys_lock);
 }
-
+/*
+bool chdir (const char *dir)
+{
+  return resolve_directory (dir);
+}
+*/
 void check_valid_ptr (const void *vaddr)
 {
   if (!is_user_vaddr(vaddr) || vaddr < USER_VADDR_BOTTOM)
@@ -399,3 +415,39 @@ void check_valid_string (const void* str)
       str = (char *) str + 1;
     }
 }
+
+/* Resolves absolute directory name to current directory */
+/*
+char * resolve_file (const void* str)
+{
+  char *f = str;
+  return str;
+}
+
+char * resolve_directory (const void* str)
+{
+
+  char *f = malloc(sizeof(strlen(str))+1); 
+  char *token, *save_ptr;
+  strcpy (f, str, strlen(str));
+
+  for (token = strtok_r (s, "/", &save_ptr); token != NULL;
+	token = strtok_r (NULL, "/", &save_ptr))
+    {
+      if (strcmp(token, "."))
+        {
+        }	
+    }  
+  
+  return str;
+}
+*/
+
+/* Given absolute path, changes directory to the relative
+   directory so file can be opened under current directory. */
+/*
+char * resolve_path (const void* str)
+{
+  return NULL;
+}
+*/

@@ -12,6 +12,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/directory.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/syscall.h"
@@ -215,7 +217,16 @@ thread_create (const char *name, int priority,
   t->parent = thread_tid();
   struct child_process *cp = add_child_process(t->tid);
   t->cp = cp;
-
+ 
+  // Inherit parent's directory
+  if (thread_current()->cur_dir)
+    {
+      t->cur_dir = dir_reopen(thread_current()->cur_dir);
+    }
+  else
+    {
+      t->cur_dir = NULL;
+    }  
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -638,3 +649,20 @@ void release_locks (void)
       e = next;
     }
 }
+
+struct thread * get_thread (int pid)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == pid)
+	{
+	  return t;
+	}
+    }
+  return NULL;
+}
+
