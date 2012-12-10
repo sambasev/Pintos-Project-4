@@ -14,6 +14,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "filesys/directory.h"
+#include <string.h>
 
 #define MAX_ARGS 3
 #define USER_VADDR_BOTTOM ((void *) 0x08048000)
@@ -24,6 +25,8 @@ void get_arg (struct intr_frame *f, int *arg, int n);
 void check_valid_ptr (const void *vaddr);
 void check_valid_buffer (void* buffer, unsigned size);
 void check_valid_string (const void* str);
+char * resolve_file (const void* str);
+char * resolve_dir (const void* dir);
 
 void
 syscall_init (void) 
@@ -128,6 +131,28 @@ syscall_handler (struct intr_frame *f UNUSED)
 	get_arg(f, &arg[0], 1);
 	close(arg[0]);
 	break;
+      }
+    case SYS_CHDIR:
+      {
+	get_arg(f, &arg[0], 1);
+	check_valid_string((const void *) arg[0]);
+	arg[0] = user_to_kernel_ptr((const void *) arg[0]);
+	f->eax = chdir((const char *) arg[0]);
+	break; 		
+      }
+    case SYS_MKDIR:
+      {
+	get_arg(f, &arg[0], 1);
+	check_valid_string((const void *) arg[0]);
+	arg[0] = user_to_kernel_ptr((const void *) arg[0]);
+	f->eax = mkdir((const char *) arg[0]);
+	break; 		
+      }
+    case SYS_ISDIR:
+      {
+        get_arg(f, &arg[0], 1);
+        f->eax = isdir(arg[0]);
+        break;
       }
     }
 }
@@ -303,12 +328,23 @@ void close (int fd)
   process_close_file(fd);
   lock_release(&filesys_lock);
 }
-/*
+
 bool chdir (const char *dir)
 {
-  return resolve_directory (dir);
+  resolve_dir (dir); 
+  return true;
 }
-*/
+
+bool mkdir (const char *dir)
+{
+  return true;
+}
+
+bool isdir (int fd)
+{
+  return true;
+}
+
 void check_valid_ptr (const void *vaddr)
 {
   if (!is_user_vaddr(vaddr) || vaddr < USER_VADDR_BOTTOM)
@@ -417,31 +453,48 @@ void check_valid_string (const void* str)
 }
 
 /* Resolves absolute directory name to current directory */
-/*
+
 char * resolve_file (const void* str)
 {
-  char *f = str;
   return str;
 }
 
-char * resolve_directory (const void* str)
+/* Changes thread's current directory to dir.
+   If no change to be done, returns dir.
+   If directory successfully resolved, returns new dir
+   If invalid directory, returns NULL*/
+char * resolve_dir (const void* dir)
 {
-
-  char *f = malloc(sizeof(strlen(str))+1); 
+  char *f = malloc (sizeof(strlen(dir)) + 1); 
   char *token, *save_ptr;
-  strcpy (f, str, strlen(str));
-
-  for (token = strtok_r (s, "/", &save_ptr); token != NULL;
+  struct inode *inode = NULL;
+  
+  
+  struct thread *t = thread_current();
+  if (!dir)
+    {
+      free (f);
+      return NULL;
+    }
+  strlcpy (f, dir, strlen(dir));
+  /* Nothing to resolve */
+  if (!strchr("/", dir) && !strchr(".", dir))
+    {
+      free (f);
+      return dir;
+    }
+  for (token = strtok_r (f, "/", &save_ptr); token != NULL;
 	token = strtok_r (NULL, "/", &save_ptr))
     {
-      if (strcmp(token, "."))
+       /* If dir exists, change to it */
+      if (dir_lookup (t->cur_dir, token, &inode))
         {
-        }	
+          
+        }
     }  
-  
-  return str;
+  return token;
 }
-*/
+
 
 /* Given absolute path, changes directory to the relative
    directory so file can be opened under current directory. */

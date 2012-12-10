@@ -25,15 +25,13 @@ struct cache_entry
    struct hash_elem hash_elem; /* Each cache_entry is an element in the buffer_cache hash table */
    struct list_elem list_elem; /* Member in lru list */
    block_sector_t sector;      /* The key is block_sector_t and the data returned is data */
-   char name[16]; 	       /* Block device name. You can call block_get_by_name on this */
    void * data;                /* Actual data read from the block */
-   bool accessed;	       /* Used for  */
+   bool accessed;	       /* Entry accessed  */
    bool dirty;                 /* Indicates if this entry was modified */
-   bool read_only;             /* R/W */
 };
+
 struct hash buffer_cache;
 struct list lru;	       /* Used for evicting LRU cache line */	
-static struct bitmap *free_map;
 struct list_elem * update_lru (struct cache_entry *e, bool insert);
 
 int entries_in_cache = 0;
@@ -41,22 +39,19 @@ int disk_access = 0;	       /* Used for measuring performance improvement due to
 int total_access = 0;
 int64_t time = 0;
 
-void buffer_cache_init (void)  /* Called in inode.c */
+void buffer_cache_init (void)  		  
 {
    /* Hash Table Initialization */
    hash_init (&buffer_cache, block_hash, block_less, NULL);
    list_init (&lru);
-   free_map = bitmap_create (CACHE_SIZE); /* TODO: Use this instead of entries_in_cache */
-   time = timer_ticks ();		  /* Get current time */
+   time = timer_ticks ();      /* Get current time */
 }
 
 /* Best effort cache_read */
 int block_cache_read (struct block *block, block_sector_t sector, void *buffer)
 {
    total_access++;
-   timer_update();					/* Any cache access updates timer */
-   LOG("<1> READ block: %x sector %x buffer %x\n", 
-      (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+   timer_update();		/* Any cache access updates timer */
    return cache_read (block, sector, buffer);
 }
 
@@ -64,7 +59,7 @@ int block_cache_read_partial (struct block *block, block_sector_t sector,
           void *buffer, int ofs, int chunk_size)
 {
    uint8_t *bounce = malloc (BLOCK_SECTOR_SIZE);
-   int rc = block_cache_read (block, sector, bounce);	/* Read a block into bounce */
+   int rc = block_cache_read (block, sector, bounce);	
    memcpy (buffer, bounce + ofs, chunk_size);
    free (bounce); 	
    bounce = NULL;
@@ -74,9 +69,7 @@ int block_cache_read_partial (struct block *block, block_sector_t sector,
 int block_cache_write (struct block *block, block_sector_t sector, const void *buffer)
 {
    total_access++;
-   timer_update();					/* Any cache access updates timer */
-   LOG("<2> WRITE block: %x sector %x buffer %x\n", 
-      (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
+   timer_update();		/* Any cache access updates timer */
    return cache_write (block, sector, buffer);
 }
 
@@ -102,27 +95,20 @@ int block_cache_write_partial (struct block * block, block_sector_t sector,
 
 int cache_insert (struct block *block, block_sector_t sector, void *buffer, enum access_t access)
 {
-   /* TODO: Check malloc success */
-   LOG("<2.1> INSERT block: %x sector %x access %d\n", 
-      (uint32_t)block, sector, access);
    struct cache_entry *buf = malloc (sizeof(struct cache_entry));	
    buf->data = malloc(BLOCK_SECTOR_SIZE);	
    buf->sector = sector;
-   if (access == WRITE) 
+   if (access == WRITE) 	/* write-behind cache: write to disk on evict */
      {
-       buf->dirty = true;			/* write-behind cache: write to disk on evict */
+       buf->dirty = true;			
        memcpy (buf->data, buffer, BLOCK_SECTOR_SIZE);
      }
-   else
-     {
-       block_read (block_get_role (BLOCK_FILESYS), sector, buf->data); /* Read from disk and populate cache */
+   else				/* Read from disk and populate cache */
+     {			      
+       block_read (block_get_role (BLOCK_FILESYS), sector, buf->data); 
        disk_access++;
        memcpy (buffer, buf->data, BLOCK_SECTOR_SIZE);
-       LOG("<2.2> INSERT block: %x sector %x access %d\n", 
-	  (uint32_t)block, sector, access);
      }
-       LOG("<2.3> INSERT block: %x sector %x access %d\n", 
-	  (uint32_t)block, sector, access);
    struct list_elem *full = update_lru (buf, true);
    if (full)
      {
@@ -140,17 +126,14 @@ int cache_read (struct block *block, block_sector_t sector, void *buffer)
    struct cache_entry *found = cache_lookup (sector);
    if (found)
      {
-        LOG("<1.5> READ found block: %x sector %x buffer %x\n", 
-	   (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
 	found->accessed = true;
 	memcpy (buffer, found->data, BLOCK_SECTOR_SIZE);
-	update_lru (found, false);    /* Update corresponding item in lru list */
+	/* Update corresponding item in lru list */
+	update_lru (found, false);    
 	return SUCCESS;
      }
    else
      {
-        LOG("<1.6> READ NOT found block: %x sector %x buffer %x\n", 
-	   (uint32_t)block, (uint32_t)sector, (uint32_t) buffer);
 	return (cache_insert (block, sector, buffer, READ));
      }
 }
@@ -167,9 +150,9 @@ int cache_write (struct block *block, block_sector_t sector, const void *buffer)
 	found->accessed = true;
 	memcpy (found->data, buffer, BLOCK_SECTOR_SIZE);
 	/* TODO: Synch call to hash access so only one person can modify cache AND lru list */
-	struct hash_elem *old = hash_replace (&buffer_cache, &found->hash_elem); /* Update hash table */
+	/* Update Hash Table */
+	struct hash_elem *old = hash_replace (&buffer_cache, &found->hash_elem); 
 	update_lru (found, false);
-	LOG ("<2.1> WRITE found cache_write \n");
 	return SUCCESS;
      }
    else 
@@ -190,13 +173,11 @@ void cache_evict (struct list_elem *e)
 	    disk_access++;
 	    free (lru_entry->data);
 	    lru_entry->data = NULL;
-            LOG("<3> Evicted sector :%x \n", (uint32_t)lru_entry->sector);
    	  }
         /* Delete line from buffer_cache */ 	
         hash_delete (&buffer_cache, &lru_entry->hash_elem);
-        LOG("<3.1> Hash Entry Deleted %x entries_in_cache : %d\n", 
-	   (uint32_t)lru_entry->sector, entries_in_cache);
-        free (lru_entry);	/* Free resources */
+	/* Free resources */
+        free (lru_entry);			
 	lru_entry = NULL;
 
         entries_in_cache--;
@@ -205,10 +186,8 @@ void cache_evict (struct list_elem *e)
 
 bool cache_is_full (void)
 {
-   LOG ("disk_accesses TOTAL (R+W) : %d total_accesses %d \n", disk_access, total_access);
    return (entries_in_cache >= CACHE_SIZE);
 }
-
 
 /* Called periodically (every 30 seconds) by timer interrupt event */
 void cache_flush (void)

@@ -9,10 +9,10 @@
 #include "filesys/cache.h"
 /* Partition that contains the file system. */
 struct block *fs_device;
+bool
+filesys_create_dir (struct dir *cur_dir, const char *name, off_t initial_size);
 
 static void do_format (void);
-struct file *
-filesys_open_in_dir (const char *name, struct dir *d);
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
 void
@@ -55,6 +55,30 @@ filesys_create (const char *name, off_t initial_size)
                   && inode_create (inode_sector, initial_size)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
+    free_map_release (inode_sector, 1);
+  dir_close (dir);
+
+  return success;
+}
+
+bool
+filesys_create_dir (struct dir *cur_dir, const char *name, off_t initial_size)
+{
+  block_sector_t inode_sector = 0;
+  struct dir *dir;
+  if (cur_dir)
+    {
+       dir = cur_dir;
+    }
+  else
+    {
+       dir = dir_open_root ();
+    }
+  bool success = (dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && inode_create (inode_sector, initial_size)
+                  && dir_add (dir, name, inode_sector));
+  if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
   dir_close (dir);
 

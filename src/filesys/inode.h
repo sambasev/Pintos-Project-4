@@ -30,7 +30,7 @@ size_t alloc_double_indirect_sectors (block_sector_t *ptr, int index,
 
 bool eof_reached (struct inode *node, off_t pos);
 int no_bytes (void);
-block_sector_t get_inode_block (struct inode *node, off_t pos, bool read);
+block_sector_t get_inode_block (struct inode *node, off_t size, off_t pos, bool read);
 block_sector_t extend_file (struct inode *node, off_t pos);
 block_sector_t direct_block (struct inode *node, off_t block);
 block_sector_t indirect_block (struct inode *node, off_t block);
