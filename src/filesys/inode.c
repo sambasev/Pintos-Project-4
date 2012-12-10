@@ -253,7 +253,7 @@ bool sector_allocation (size_t sectors, size_t *direct_p,
   return true;		/* SUCCESS */
 }
 
-/* Allocates and initializes num_sectors # of blocks starting from ptr[index] 
+/* Allocates and initializes sectors # of blocks starting from ptr[index] 
    and returns # of sectors successfully allocated */
 size_t alloc_direct_sectors (block_sector_t *ptr, int index, size_t sectors)
 {
@@ -353,61 +353,69 @@ int no_bytes (void)
    Caller should make sure the block is a direct block before calling */
 block_sector_t direct_block (struct inode *node, off_t block)
 {
-   ASSERT (node != NULL);
-   return node->data.blocks[block]; 		    /* node->data read at inode_open */
+   ASSERT (node != NULL && (block > 0));
+   off_t index = block - 1;
+   return node->data.blocks[index];	 		    /* node->data read at inode_open */
 }
 
 block_sector_t indirect_block (struct inode *node, off_t block)
 {
-   ASSERT (node != NULL);
+   ASSERT (node != NULL && block > 0);
+   off_t index = block - 1;
    /* Get the indirect block */
    block_cache_read (fs_device, node->data.indirect, &node->ind_data); 
-   return node->ind_data.blocks[block];
+   return node->ind_data.blocks[index];
 }
 
 block_sector_t dbl_indirect_block (struct inode *node, off_t block)
 {
    LOG("<1> dbl_indirect_block %d\n", (uint32_t) block);
-   ASSERT (node != NULL); 
-   off_t indirect_block = block / DBL_INDIRECT_BLOCKS;
-   off_t indirect_index = block % INDIRECT_BLOCKS;
-   /* First, read double indirect block */
+   ASSERT (node != NULL);
+   
+   /* Read the double indirect struct of this inode */ 
    block_cache_read (fs_device, node->data.dbl_indirect, &node->dbl_indirect);
+
    /* Get the indirect block */
+   off_t dbl_indirect_index = block / (DBL_INDIRECT_BLOCKS + 1);
    struct inode_indirect *disk_indirect = NULL;
    disk_indirect = calloc (1, sizeof (*disk_indirect));
    block_cache_read (fs_device, 
-		node->dbl_indirect.indirect[indirect_block], disk_indirect);
+		node->dbl_indirect.indirect[dbl_indirect_index], disk_indirect);
+
    /* Get the actual block which contains data */
-   block_sector_t data =  disk_indirect->blocks[indirect_index];
+   off_t indirect_index = block % (INDIRECT_BLOCKS);
+   block_sector_t data =  disk_indirect->blocks[indirect_index - 1];
    LOG("<1> block_sector_t data %d\n", (uint32_t)data);
+
    free (disk_indirect);
    return data;
 }
 
 /* Returns the block corresponding to the inode struct and offset 
    If block is within a direct block, reads disk_inode and gets the block #
-   If block is within an indirect block, reads disk_inode, indirect_inode and returns blcok 
+   If block is within an indirect block, reads disk_inode, indirect_inode and returns block 
    If block is within a double indirect block, reads disk_inode, dbl_indirect_inode
    then the indirect_inode and returns block */
 block_sector_t get_inode_block (struct inode *node, off_t pos, bool read)
 { 
    ASSERT (node != NULL);
    ASSERT (pos < MAX_FILE_SIZE);		/* File too big */
-   size_t blk = pos / BLOCK_SECTOR_SIZE; 	/* Get the block offset */
-   if (pos < node->data.length)		/* Check for File Extension */
+   size_t blk = bytes_to_sectors(pos);	 	/* Get the block offset */
+   blk = MAX (1, blk);
+
+   if (pos < node->data.length)			/* Check for File Extension */
      {
-       if (blk < DIRECT_BLOCKS)
+       if (blk <= DIRECT_BLOCKS)		/* blk range 1 to 10 */
     	 {
            return direct_block (node, blk);
     	 }
-       if (blk < (DIRECT_BLOCKS + INDIRECT_BLOCKS)) 
-         {
+       if (blk <= (DIRECT_BLOCKS + INDIRECT_BLOCKS)) 
+         {					/* blk range 11 to 135 */
 	   blk -= DIRECT_BLOCKS; 
            return indirect_block (node, blk);
 	 }
-       if (blk < TOTAL_BLOCKS)			/* Catch-all */	
-         {
+       if (blk <= TOTAL_BLOCKS)				
+         {					/* blk range 136 to 15760*/
 	   blk -= (DIRECT_BLOCKS + INDIRECT_BLOCKS);
 	   LOG("<3>dbl indirect block: %d\n", (int)blk); 
            return dbl_indirect_block (node, blk);
@@ -418,32 +426,39 @@ block_sector_t get_inode_block (struct inode *node, off_t pos, bool read)
        if (read)
            return -1;				/* no bytes to read */
        else					/* Write will extend file */
-           return extend_file (node, blk);
+           return extend_file (node, pos);
      }	
    return -1; 	
 }
 
 /* Extends file from current size to given offset by filling intermediate blocks
    with zeroes. Returns the block corresponding to offset */
-block_sector_t extend_file (struct inode *node, size_t sectors)	
+block_sector_t extend_file (struct inode *node, off_t pos)	
 {
   ASSERT (node != NULL);
-  LOG ("<1> Extend_file sectors %d node->sector %d file size: %d\n", 
-	(uint32_t)sectors, (uint32_t)node->sector, (uint32_t)node->length);
   size_t old_direct = 0, old_indirect = 0, old_dbl = 0, old_remaining = 0;
   size_t new_direct = 0, new_indirect = 0, new_dbl = 0, new_remaining = 0;
-  size_t cur_sectors = node->length / BLOCK_SECTOR_SIZE;
-  if (cur_sectors % BLOCK_SECTOR_SIZE)
+  size_t cur_sectors = bytes_to_sectors (node->length);
+  size_t new_sectors = bytes_to_sectors (pos);   
+/*  if (cur_sectors % BLOCK_SECTOR_SIZE)
     {
       cur_sectors++;
     }  
+*/
   sector_allocation (cur_sectors, &old_direct, &old_indirect, &old_dbl, &old_remaining);
-  sector_allocation (sectors, &new_direct, &new_indirect, &new_dbl, &new_remaining);
-  block_sector_t new_sector = 0; 
+  sector_allocation (new_sectors, &new_direct, &new_indirect, &new_dbl, &new_remaining);
+  block_sector_t extended_sector = 0; 
+  LOG ("<1.1> cur sectors %d filesize %d new sectors % pos %d\n",
+	(uint32_t)cur_sectors, (uint32_t)node->length, (uint32_t)new_sectors, (uint32_t)pos);
+  LOG ("<1.2> old direct %d old ind %d old dbl %d old rem %d\n", 
+	(uint32_t)old_direct, (uint32_t)old_indirect, (uint32_t)old_dbl, (uint32_t)old_remaining);
+  LOG ("<1.3> new direct %d new ind %d new dbl %d new rem %d\n",
+        (uint32_t)new_direct, (uint32_t)new_indirect, (uint32_t)new_dbl, (uint32_t)new_remaining);
 
   if (new_direct > old_direct)
     {
-      alloc_direct_sectors (node->data.blocks, old_direct+1, new_direct);
+      alloc_direct_sectors (node->data.blocks, old_direct, new_direct-old_direct);
+      extended_sector = direct_block (node, (off_t)new_direct);
     }
 
   if (new_indirect > old_indirect)
@@ -476,7 +491,7 @@ block_sector_t extend_file (struct inode *node, size_t sectors)
     {
 
     } 
-  return new_sector; 
+  return extended_sector; 
 }
 
 /* Reads an inode from SECTOR
@@ -582,7 +597,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      // block_sector_t sector_idx = byte_to_sector (inode, offset);
       block_sector_t sector_idx = get_inode_block (inode, offset, true);
       if ((uint32_t)offset > 69000) 
 	{
