@@ -223,6 +223,8 @@ which if dirty, gets written to disk. If it isn't dirty, the item is removed fro
 
 Writes are done on the cache and the dirty bit is set on the write. When the dirty item
 is chosen for eviction, it is written to disk. If an item is not dirty, it is not written.
+In addition, on every cache access, I update the timer. If time>=30 seconds, I flush the cache,
+and reset the timer.
 
 >> C4: Describe your implementation of read-ahead.
 
