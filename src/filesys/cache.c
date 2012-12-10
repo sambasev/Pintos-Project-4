@@ -236,24 +236,23 @@ void timer_update (void)
 */
 struct list_elem * update_lru (struct cache_entry *e, bool insert)
 {
-   if (insert==false) /* Access was read/write - put element at top of the list */
+   if (insert==false) 
      {
-	LOG("<4> Removed sector %x from LRU list\n", (uint32_t)e->sector);
+        /* Access was read/write - put element at top of the list */
 	list_remove (&e->list_elem);
 	list_push_front (&lru, &e->list_elem);
 	return NULL;
      }
    else
-     {		/* Access is an insert - return item to evict if cache full, update lru otherwise */
+     {	
+	/* Access is an insert - return item to evict if cache full, update lru otherwise */
 	if (cache_is_full())
 	  {
-	     LOG("<4> Pushed sector %x to LRU list cache full\n", (uint32_t)e->sector);
-	     list_push_front (&lru, &e->list_elem); /* List will have MAX+1 items temporarily */
+	     list_push_front (&lru, &e->list_elem); 
 	     return list_pop_back (&lru);	
 	  }
 	else
 	  {
-	     LOG("<4> Pushed sector %x to LRU list\n", (uint32_t)e->sector);
 	     list_push_front (&lru, &e->list_elem); 
 	     return NULL;	
 	  }	

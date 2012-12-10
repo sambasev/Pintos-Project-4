@@ -54,7 +54,6 @@ struct inode_indirect
     block_sector_t parent;		/* The inode_disk to which this belongs */
     off_t length;			/* # of data blocks used */
     block_sector_t blocks[INDIRECT_BLOCKS];
-					/* Each block holds data */
   };
 
 /* On-disk double indirect block - Each dbl_indirect block can hold an array
@@ -65,7 +64,6 @@ struct inode_dbl_indirect
     block_sector_t parent;              /* The inode_disk to which this belongs */
     off_t length;			/* # of indirect blocks used */
     block_sector_t indirect[INDIRECT_BLOCKS];
-					/* Each block holds an indirect block */
   };
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */

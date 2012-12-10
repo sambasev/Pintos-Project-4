@@ -11,7 +11,8 @@
 struct block *fs_device;
 
 static void do_format (void);
-
+struct file *
+filesys_open_in_dir (const char *name, struct dir *d);
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
 void
@@ -69,6 +70,24 @@ struct file *
 filesys_open (const char *name)
 {
   struct dir *dir = dir_open_root ();
+  struct inode *inode = NULL;
+
+  if (dir != NULL)
+    dir_lookup (dir, name, &inode);
+  dir_close (dir);
+
+  return file_open (inode);
+}
+
+/* Opens the file with the given NAME under directory d.
+   Returns the new file if successful or a null pointer
+   otherwise.
+   Fails if no file named NAME exists,
+   or if an internal memory allocation fails. */
+struct file *
+filesys_open_in_dir (const char *name, struct dir *d)
+{
+  struct dir *dir = d;
   struct inode *inode = NULL;
 
   if (dir != NULL)

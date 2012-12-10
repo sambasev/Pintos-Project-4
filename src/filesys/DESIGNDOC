@@ -8,18 +8,30 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
-FirstName LastName <email@domain.example>
+Sambasevam Shanmugam sambasevam@gmail.com
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+Please note that the directory code is commented out. 
+
+First of all, thank you for the extension. I still didn't have enough time 
+to complete the project though. I got stuck on a few bugs
+and spent too much time on them. However, I am satisfied about my design
+and understanding of file extension, growth and buffer cache. 
+I wish that I had skipped thanksgiving because I would have been able to complete it. 
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+
+I referred online a couple simple macros such as for debug on/off, min/max. 
+In addition, I referred to these resources for a better understanding of file 
+systems :
+http://www.tldp.org/LDP/tlk/fs/filesystem.html
+http://www.eng.utah.edu/~cs5460/slides/Lecture18.pdf
 
 		     INDEXED AND EXTENSIBLE FILES
 		     ============================
@@ -30,8 +42,82 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* On-disk inode.
+   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+  {
+    block_sector_t start;               /* UNUSED First data sector. */
+
+    block_sector_t blocks[DIRECT_BLOCKS];/* For files <5 kB */
+    off_t length;                       /* File size in bytes. */
+    block_sector_t self;                /* Block in which this inode is stored.
+                                           Same as sector in struct inode*/
+    block_sector_t indirect;            /* Block where inode_indirect struct is stored */
+    block_sector_t dbl_indirect;        /* Block where inode_dbl_indirect struct is stored */
+    unsigned indirect_used;             /* Indicates if indirect used */
+    unsigned dbl_indirect_used ;        /* Indicates if dbl_indirect is used */
+    unsigned magic;                     /* Magic number. */
+    uint32_t unused[110];               /* Not used. */
+  };
+
+/* On-disk indirect block - Each indirect block contains an array of 125
+   blocks each of which can hold BLOCK_SECTOR_SIZE bytes of data for a total
+   of 125 * BLOCK_SECTOR_SIZE bytes of data */
+struct inode_indirect
+  {
+    block_sector_t sector;              /* sector containing this data structure */
+    block_sector_t parent;              /* The inode_disk to which this belongs */
+    off_t length;                       /* # of data blocks used */
+    block_sector_t blocks[INDIRECT_BLOCKS];
+  };
+
+/* On-disk double indirect block - Each dbl_indirect block can hold an array
+   of 125 blocks each of which can hold 125 indirect blocks */
+struct inode_dbl_indirect
+  {
+    block_sector_t sector;
+    block_sector_t parent;              /* The inode_disk to which this belongs */
+    off_t length;                       /* # of indirect blocks used */
+    block_sector_t indirect[INDIRECT_BLOCKS];
+  };
+/* In-memory inode. */
+struct inode
+  {
+    struct list_elem elem;              /* Element in inode list. */
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct inode_disk data;             /* Inode content. */
+
+    off_t length;
+    struct inode_indirect ind_data;     /* Each indirect block holds 128 block #s */
+    struct inode_dbl_indirect dbl_indirect;
+                                        /* One dbly indirect block can address 16384 blocks */
+  };
+
+
+inode_disk is the actual block stored in the disk. Its key elements are blocks[], indirect, dbl_indirect.
+blocks[] are the direct blocks for files of less than 5kB (10*512 bytes). indirect and dbl_indirect are
+where the two corresponding structs reside in disk.  
+
+inode_indirect is an on-disk struct which has 125 data block sectors. inode_dbl_indirect has 125 
+blocks each of which hold an inode_indirect struct.
+
+struct inode is a container for the on-disk inode structures. For example, to read an indirect sector,
+I first get the on-disk inode, read the indirect block into ind_data and access its blocks[].
+
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
+
+#define DIRECT_BLOCKS 10
+#define INDIRECT_BLOCKS 125
+#define DBL_INDIRECT_BLOCKS 125
+#define TOTAL_BLOCKS 15760
+#define MAX_FILE_SIZE 8069120           /* Appx. 8 MB */
+
+10 direct blocks + 125 indirect blocks + 125 * 125 double indirect blocks for a total of 15760 data blocks.
+15760 * 512B = 8069120 bytes which is 7.69 MB.
 
 ---- SYNCHRONIZATION ----
 
@@ -59,6 +145,12 @@ FirstName LastName <email@domain.example>
 >> indirect blocks?  If not, why did you choose an alternative inode
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
+
+Yes. I chose the combination of direct/indirect/doubly-indirect blocks
+to allow for creating files of upto 8 MB in size. The advantage of the
+multi-level index is that it was easy for me to understand it. The
+disadvantage is that it was tricky to extend a file due to the 
+calculation necessary to allocate blocks of each category.
 
 			    SUBDIRECTORIES
 			    ==============
@@ -99,13 +191,38 @@ FirstName LastName <email@domain.example>
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+In filesys/cache.c
+struct cache_entry
+{
+   struct hash_elem hash_elem; /* Each cache_entry is an element in the buffer_cache hash table */
+   struct list_elem list_elem; /* Member in lru list */
+   block_sector_t sector;      /* The key is block_sector_t and the data returned is data */
+   char name[16];              /* Unused */
+   void * data;                /* Actual data read from the block */
+   bool accessed;              /* Unused */
+   bool dirty;                 /* Indicates if this entry was modified */
+   bool read_only;             /* Unused R/W */
+};
+
+struct hash buffer_cache;	
+struct list lru; 
+
 
 ---- ALGORITHMS ----
 
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
+Every cache entry is part of the buffer cache hash table and the lru list.
+On every cache access, I update the lru list. The item accessed/inserted 
+is at the top of the list. Existing items are re-ordered to the top when accessed. 
+The least recently used item is the last element. When cache is full, I evict the LRU element
+which if dirty, gets written to disk. If it isn't dirty, the item is removed from the list. 
+
 >> C3: Describe your implementation of write-behind.
+
+Writes are done on the cache and the dirty bit is set on the write. When the dirty item
+is chosen for eviction, it is written to disk. If an item is not dirty, it is not written.
 
 >> C4: Describe your implementation of read-ahead.
 
@@ -123,6 +240,7 @@ FirstName LastName <email@domain.example>
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
 
+
 			   SURVEY QUESTIONS
 			   ================
 
@@ -135,8 +253,13 @@ the quarter.
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
 
+It was easier than the rest to understand what to do. 
+
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+Absolutely. I now understand how files are stored/accessed. The whole inode 
+concept was a mystery to me before this assignment and now it is very clear.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
