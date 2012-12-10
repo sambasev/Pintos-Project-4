@@ -15,13 +15,14 @@ Sambasevam Shanmugam sambasevam@gmail.com
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-Please note that the directory code is commented out. 
+Please note that the directory code is not complete. 
 
 First of all, thank you for the extension. I still didn't have enough time 
 to complete the project though. I got stuck on a few bugs
 and spent too much time on them. However, I am satisfied about my design
 and understanding of file extension, growth and buffer cache. 
-I wish that I had skipped thanksgiving because I would have been able to complete it. 
+I wish that I had skipped thanksgiving because I would have been able to 
+complete it. 
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
@@ -97,15 +98,17 @@ struct inode
   };
 
 
-inode_disk is the actual block stored in the disk. Its key elements are blocks[], indirect, dbl_indirect.
-blocks[] are the direct blocks for files of less than 5kB (10*512 bytes). indirect and dbl_indirect are
-where the two corresponding structs reside in disk.  
+inode_disk is the actual block stored in the disk. Its key elements are blocks[],
+ indirect, dbl_indirect. blocks[] are the direct blocks for files of less than 
+5kB (10*512 bytes). indirect and dbl_indirect are where the two corresponding 
+structs reside in disk.  
 
-inode_indirect is an on-disk struct which has 125 data block sectors. inode_dbl_indirect has 125 
-blocks each of which hold an inode_indirect struct.
+inode_indirect is an on-disk struct which has 125 data block sectors. 
+inode_dbl_indirect has 125 blocks each of which hold an inode_indirect struct.
 
-struct inode is a container for the on-disk inode structures. For example, to read an indirect sector,
-I first get the on-disk inode, read the indirect block into ind_data and access its blocks[].
+struct inode is a container for the on-disk inode structures. For example, 
+to read an indirect sector,I first get the on-disk inode, read the indirect 
+block into ind_data and access its blocks[].
 
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
@@ -116,13 +119,17 @@ I first get the on-disk inode, read the indirect block into ind_data and access 
 #define TOTAL_BLOCKS 15760
 #define MAX_FILE_SIZE 8069120           /* Appx. 8 MB */
 
-10 direct blocks + 125 indirect blocks + 125 * 125 double indirect blocks for a total of 15760 data blocks.
+10 direct blocks + 125 indirect blocks + 125 * 125 double indirect 
+blocks for a total of 15760 data blocks.
 15760 * 512B = 8069120 bytes which is 7.69 MB.
 
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
+Currently it doesn't. If it were to, whichever processor ran first, 
+would extend the file and the next one wouldn't be seeing as the check
+for file extension (acccess > file_size) would fail if proc 1 succeeded.
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -165,6 +172,10 @@ calculation necessary to allocate blocks of each category.
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
+I use a helper function called resolve_dir that uses strtok_r to 
+seperate the "/"s. First, I check if there is a "/" or "." anywhere.
+If there isn't, I return. Else, I do a dir lookup of the token 
+from strtok_r.
 
 ---- SYNCHRONIZATION ----
 
@@ -172,6 +183,8 @@ calculation necessary to allocate blocks of each category.
 >> only one of two simultaneous attempts to remove a single file
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
+I'll have a lock per file/directory a process should acquire before 
+modifying it.
 
 >> B5: Does your implementation allow a directory to be removed if it
 >> is open by a process or if it is in use as a process's current
@@ -197,11 +210,9 @@ struct cache_entry
    struct hash_elem hash_elem; /* Each cache_entry is an element in the buffer_cache hash table */
    struct list_elem list_elem; /* Member in lru list */
    block_sector_t sector;      /* The key is block_sector_t and the data returned is data */
-   char name[16];              /* Unused */
    void * data;                /* Actual data read from the block */
    bool accessed;              /* Unused */
    bool dirty;                 /* Indicates if this entry was modified */
-   bool read_only;             /* Unused R/W */
 };
 
 struct hash buffer_cache;	
@@ -216,17 +227,23 @@ struct list lru;
 Every cache entry is part of the buffer cache hash table and the lru list.
 On every cache access, I update the lru list. The item accessed/inserted 
 is at the top of the list. Existing items are re-ordered to the top when accessed. 
-The least recently used item is the last element. When cache is full, I evict the LRU element
-which if dirty, gets written to disk. If it isn't dirty, the item is removed from the list. 
+The least recently used item is the last element. When cache is full, I evict 
+the LRU element which if dirty, gets written to disk. If it isn't dirty,
+ the item is removed from the list. 
 
 >> C3: Describe your implementation of write-behind.
 
-Writes are done on the cache and the dirty bit is set on the write. When the dirty item
-is chosen for eviction, it is written to disk. If an item is not dirty, it is not written.
-In addition, on every cache access, I update the timer. If time>=30 seconds, I flush the cache,
-and reset the timer.
+Writes are done on the cache and the dirty bit is set on the write. 
+When the dirty item is chosen for eviction, it is written to disk. 
+If an item is not dirty, it is not written.
+In addition, on every cache access, I update the timer. If time>=30 seconds, 
+I flush the cache, and reset the timer.
 
 >> C4: Describe your implementation of read-ahead.
+
+What I would have done is, on every read access, compute the next block sector 
+in that file. Then create a new thread whose function is read that block.
+I didn't do this however.
 
 ---- SYNCHRONIZATION ----
 
@@ -234,13 +251,28 @@ and reset the timer.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
+Currently I don't precent that from happening. However, I think the 
+best way to do that would be to have a ref_count which tracks how
+many processes are using that block, and only if it is 0 should 
+you evict it.
+
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
+
+They aren't as of now. I'll have an 'evict' bit per block. Everytime
+a process tries accessing it, if it sees the evict bit set, it won't
+read that block.
 
 ---- RATIONALE ----
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+Repetitive reading/writing of a small subset of data within a file will
+benefit from caching. Read ahead will be useful in an app like packet 
+analyzer which will do seq. access to get the next packet from disk/io.
+Write-behind will be useful for the same reason as caching - for small
+subsets of data within the cache size.
 
 
 			   SURVEY QUESTIONS
@@ -269,7 +301,11 @@ concept was a mystery to me before this assignment and now it is very clear.
 
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students in future quarters?
+More hangout hours/group hours.
 
 >> Any other comments?
+I'm disappointed that after all the work I've put in this class,
+this assignment is throwing it away. On the plus side, I've learned
+a lot about OS and how things work.  
 
 
